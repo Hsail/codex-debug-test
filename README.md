@@ -38,7 +38,7 @@
 &emsp;&emsp;接下来进一步进行项目功能优化。能够发现，此时启动的时候需要人工手动输入API-KEY，并不方便，因此我们考虑借助Codex进行项目功能优化。
 ### 4.1 Codex核心特性介绍
 <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250517165411479.png" alt="image-20250517165411479" style="zoom:50%;" />
-> Codex介绍主页：https://openai.com/index/introducing-codex/
+>Codex介绍主页：https://openai.com/index/introducing-codex/
 
 &emsp;&emsp;OpenAI **Codex**（2025研究预览版）是一个基于云端的**软件工程智能体**，能够**并行处理多项编程任务**。它可以根据用户的自然语言指令自动编写代码、回答代码库相关的问题、修复代码中的错误，甚至为代码仓库**生成Pull Request提案**  。每个任务都会在云端一个**隔离的沙盒容器**中独立执行，并预先加载用户的代码仓库环境。这意味着 Codex 能读取和编辑仓库中的文件，运行测试、lint检查、类型检查等命令来验证代码  。当 Codex 完成任务后，会在沙盒环境中**提交代码更改**并提供**可验证的证据**（例如终端日志、测试输出的引用），方便用户审查每一步操作  。用户可以查看 Codex 的修改结果，要求进一步调整，或将这些更改转换为 GitHub 上的 Pull Request，亦或直接合并到本地环境 。为了使 Codex 更好地理解项目，开发者还可以在仓库中添加**AGENTS.md**文件，对项目背景、测试命令、编码规范等进行说明，帮助指导 Codex 进行更符合项目需求的操作 。
 
@@ -63,7 +63,43 @@
 
 绑定后即可开始使用Codex。
 
-### 4.3 Fork项目与Codex自动测试
-​&emsp;&emsp;由于Codex和GitHub直接绑定，因此我们需要先Fork当前项目（也可以上传自己的项目），然后对项目进行功能优化。点击
-
+### 4.3 Fork项目与创建环境
+​&emsp;&emsp;由于Codex和GitHub直接绑定，因此我们需要先Fork当前项目（也可以上传自己的项目），然后对项目进行功能优化。点击Fork，然后即可在自己的GitHub项目主页中看到拷贝的项目版本。
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518160208420.png" alt="image-20250518160208420" style="zoom:50%;" />
   
+​&emsp;&emsp;此时打开Codex，点击环境——创建环境，就能codex-debut-test项目了：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518160625627.png" alt="image-20250518160625627" style="zoom:50%;" />
+然后选择codex-debug-test项目，点击创建环境：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518160708182.png" alt="image-20250518160708182" style="zoom:50%;" />
+创建成功：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518160753049.png" alt="image-20250518160753049" style="zoom:50%;" />
+
+### 4.4 进行codex-debug-test项目对话
+​&emsp;&emsp;接下来回到codex主页，选择codex-debug-test项目，并简单询问项目功能（注意点击询问，而不是验证码），开启codex使用：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518160937965.png" alt="image-20250518160937965" style="zoom:50%;" />
+此时codex会先创建一个任务，点击任务就能看到codex正在创建沙盒环境容器，并查询项目核心功能：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518161105364.png" alt="image-20250518161105364" style="zoom:50%;" />
+在执行每个任务时，codex都会尽量遍历更多的代码和README文档，因此每个任务，哪怕是比较小的任务，都需要花费一小段时间。查询结束后回答结果如下：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518161215283.png" alt="image-20250518161215283" style="zoom:50%;" />
+关于其他任何项目问题，也都可以直接提问。
+
+### 4.5 借助Codex进行项目功能优化
+​&emsp;&emsp;接下来我们尝试让Codex对我们的项目进行功能优化，我们希望改进的地方在于，`目前这个codex-debug-test项目启动时需要手动输入OpenWeather的API-KEY，非常麻烦，我希望将API-KEY设置放在核心代码内部，API-KEY具体内容为ABCTESTAPI，请帮我修改项目代码完成该需求，并进行相关功能尝试`。需要注意，如果希望Codex进行项目功能测试，则需要给与正确的OpenWeather API-KEY。
+
+​&emsp;&emsp;此时Codex实际运行效果如下：
+- 启动运行：
+  <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518161557327.png" alt="image-20250518161557327" style="zoom:50%;" />
+- 完成代码和README文档修改：
+  <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518162520420.png" alt="image-20250518162520420" style="zoom:50%;" />
+- 本地测试，接下来尝试将Codex修改后的代码直接copy覆盖原始项目代码，在本地进行测试：
+  <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518162634493.png" alt="image-20250518162634493" style="zoom:50%;" />
+  <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518162858076.png" alt="image-20250518162858076" style="zoom:50%;" />
+  修改完代码后即可直接运行，此时不再需要输入API-KEY即可运行：
+  <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518162939188.png" alt="image-20250518162939188" style="zoom:50%;" />
+  测试可以顺利连接：
+  <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518163054100.png" alt="image-20250518163054100" style="zoom:50%;" />
+至此，Codex修改代码工作顺利完成。
+
+### 4.6 Codex代码推送
+​&emsp;&emsp;最后，当我们修改完代码并且本地测试无误后，即可进行代码推送，创建PR或者创建PR草案了：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518163213414.png" alt="image-20250518163213414" style="zoom:50%;" />
