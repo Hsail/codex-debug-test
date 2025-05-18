@@ -1,86 +1,192 @@
-import json
+import contextlib
+import logging
+import os
+from collections.abc import AsyncIterator
+
+import anyio
+import click
 import httpx
-import argparse  # ✅ 新增
-from typing import Any
-from mcp.server.fastmcp import FastMCP
+import mcp.types as types
+from mcp.server.lowlevel import Server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from starlette.applications import Starlette
+from starlette.routing import Mount
+from starlette.types import Receive, Scope, Send
 
-# 初始化 MCP 服务器
-mcp = FastMCP("WeatherServer")
+# ---------------------------------------------------------------------------
+# Weather helpers
+# ---------------------------------------------------------------------------
+OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
+DEFAULT_UNITS = "metric"  # use Celsius by default
+DEFAULT_LANG = "zh_cn"  # Chinese descriptions
 
-# OpenWeather API 配置
-OPENWEATHER_API_BASE = "https://api.openweathermap.org/data/2.5/weather"
-API_KEY = None  
-USER_AGENT = "weather-app/1.0"
 
-async def fetch_weather(city: str) -> dict[str, Any] | None:
+async def fetch_weather(city: str, api_key: str) -> dict[str, str]:
+    """Call OpenWeather API and return a simplified weather dict.
+
+    Raises:
+        httpx.HTTPStatusError: if the response has a non-2xx status.
     """
-    从 OpenWeather API 获取天气信息。
-    """
-    if API_KEY is None:
-        return {"error": "API_KEY 未设置，请提供有效的 OpenWeather API Key。"}
-
     params = {
         "q": city,
-        "appid": API_KEY,
-        "units": "metric",
-        "lang": "zh_cn"
+        "appid": api_key,
+        "units": DEFAULT_UNITS,
+        "lang": DEFAULT_LANG,
     }
-    headers = {"User-Agent": USER_AGENT}
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(OPENWEATHER_URL, params=params)
+        r.raise_for_status()
+        data = r.json()
+    # Extract a concise summary
+    weather_main = data["weather"][0]["main"]
+    description = data["weather"][0]["description"]
+    temp = data["main"]["temp"]
+    feels_like = data["main"]["feels_like"]
+    humidity = data["main"]["humidity"]
+    return {
+        "city": city,
+        "weather": weather_main,
+        "description": description,
+        "temp": f"{temp}°C",
+        "feels_like": f"{feels_like}°C",
+        "humidity": f"{humidity}%",
+    }
 
-    async with httpx.AsyncClient() as client:
+
+@click.command()
+@click.option("--port", default=3000, help="Port to listen on for HTTP")
+@click.option(
+    "--api-key",
+    envvar="OPENWEATHER_API_KEY",
+    required=True,
+    help="OpenWeather API key (or set OPENWEATHER_API_KEY env var)",
+)
+@click.option(
+    "--log-level",
+    default="INFO",
+    help="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+)
+@click.option(
+    "--json-response",
+    is_flag=True,
+    default=False,
+    help="Enable JSON responses instead of SSE streams",
+)
+def main(port: int, api_key: str, log_level: str, json_response: bool) -> int:
+    """Run an MCP weather server using Streamable HTTP transport."""
+
+    # ---------------------- Configure logging ----------------------
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper()),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    logger = logging.getLogger("weather-server")
+
+    # ---------------------- Create MCP Server ----------------------
+    app = Server("mcp-streamable-http-weather")
+
+    # ---------------------- Tool implementation -------------------
+    @app.call_tool()
+    async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
+        """Handle the 'get-weather' tool call."""
+        ctx = app.request_context
+        city = arguments.get("location")
+        if not city:
+            raise ValueError("'location' is required in arguments")
+
+        # Send an initial log message so the client sees streaming early.
+        await ctx.session.send_log_message(
+            level="info",
+            data=f"Fetching weather for {city}…",
+            logger="weather",
+            related_request_id=ctx.request_id,
+        )
+
         try:
-            response = await client.get(OPENWEATHER_API_BASE, params=params, headers=headers, timeout=30.0)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            return {"error": f"HTTP 错误: {e.response.status_code}"}
-        except Exception as e:
-            return {"error": f"请求失败: {str(e)}"}
+            weather = await fetch_weather(city, api_key)
+        except Exception as err:
+            # Stream the error to the client and re-raise so MCP returns error.
+            await ctx.session.send_log_message(
+                level="error",
+                data=str(err),
+                logger="weather",
+                related_request_id=ctx.request_id,
+            )
+            raise
 
-def format_weather(data: dict[str, Any] | str) -> str:
-    """
-    将天气数据格式化为易读文本。
-    """
-    if isinstance(data, str):
-        try:
-            data = json.loads(data)
-        except Exception as e:
-            return f"无法解析天气数据: {e}"
+        # Stream a success notification (optional)
+        await ctx.session.send_log_message(
+            level="info",
+            data="Weather data fetched successfully!",
+            logger="weather",
+            related_request_id=ctx.request_id,
+        )
 
-    if "error" in data:
-        return f"⚠️ {data['error']}"
+        # Compose human-readable summary for the final return value.
+        summary = (
+            f"{weather['city']}：{weather['description']}，温度 {weather['temp']}，"
+            f"体感 {weather['feels_like']}，湿度 {weather['humidity']}。"
+        )
 
-    city = data.get("name", "未知")
-    country = data.get("sys", {}).get("country", "未知")
-    temp = data.get("main", {}).get("temp", "N/A")
-    humidity = data.get("main", {}).get("humidity", "N/A")
-    wind_speed = data.get("wind", {}).get("speed", "N/A")
-    weather_list = data.get("weather", [{}])
-    description = weather_list[0].get("description", "未知")
+        return [
+            types.TextContent(type="text", text=summary),
+        ]
 
-    return (
-        f"🌍 {city}, {country}\n"
-        f"🌡 温度: {temp}°C\n"
-        f"💧 湿度: {humidity}%\n"
-        f"🌬 风速: {wind_speed} m/s\n"
-        f"🌤 天气: {description}\n"
+    # ---------------------- Tool registry -------------------------
+    @app.list_tools()
+    async def list_tools() -> list[types.Tool]:
+        """Expose available tools to the LLM."""
+        return [
+            types.Tool(
+                name="get-weather",
+                description="查询指定城市的实时天气（OpenWeather 数据）",
+                inputSchema={
+                    "type": "object",
+                    "required": ["location"],
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "城市的英文名称，如 'Beijing'",
+                        }
+                    },
+                },
+            )
+        ]
+
+    # ---------------------- Session manager -----------------------
+    session_manager = StreamableHTTPSessionManager(
+        app=app,
+        event_store=None,  # 无状态；不保存历史事件
+        json_response=json_response,
+        stateless=True,
     )
 
-@mcp.tool()
-async def query_weather(city: str) -> str:
-    """
-    输入指定城市的英文名称，返回今日天气查询结果。
-    """
-    data = await fetch_weather(city)
-    return format_weather(data)
+    async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:  # noqa: D401,E501
+        await session_manager.handle_request(scope, receive, send)
 
-def main():
-    parser = argparse.ArgumentParser(description="Weather Server")
-    parser.add_argument("--api_key", type=str, required=True, help="你的 OpenWeather API Key")
-    args = parser.parse_args()
-    global API_KEY
-    API_KEY = args.api_key
-    mcp.run(transport='stdio')
+    # ---------------------- Lifespan Management --------------------
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        async with session_manager.run():
+            logger.info("Weather MCP server started! 🚀")
+            try:
+                yield
+            finally:
+                logger.info("Weather MCP server shutting down…")
+
+    # ---------------------- ASGI app + Uvicorn ---------------------
+    starlette_app = Starlette(
+        debug=False,
+        routes=[Mount("/mcp", app=handle_streamable_http)],
+        lifespan=lifespan,
+    )
+
+    import uvicorn
+
+    uvicorn.run(starlette_app, host="0.0.0.0", port=port)
+
+    return 0
+
 
 if __name__ == "__main__":
     main()
