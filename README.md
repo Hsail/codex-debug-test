@@ -103,3 +103,6 @@
 ### 4.6 Codex代码推送
 ​&emsp;&emsp;最后，当我们修改完代码并且本地测试无误后，即可进行代码推送，创建PR或者创建PR草案了：
 <img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518163213414.png" alt="image-20250518163213414" style="zoom:50%;" />
+然后就能在项目主页中看到Codex编写的PR：
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518163456941.png" alt="image-20250518163456941" style="zoom:50%;" />
+<img src="https://ml2022.oss-cn-hangzhou.aliyuncs.com/img/image-20250518163442508.png" alt="image-20250518163442508" style="zoom:50%;" />
