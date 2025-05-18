@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-weather-http = "mcp_weather_http:main"
+mcp-get-weather = "mcp_get_weather:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
